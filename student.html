@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Who Is He? · 학생 화면</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Jua&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  .phone { max-width: 460px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; padding: 20px 18px 24px; display: flex; flex-direction: column; gap: 16px; }
+  .title { text-align: center; padding: 18px; }
+  .title b { font-family: var(--font-en); font-weight: 700; font-size: 38px; display: block; }
+  .form { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .form label { font-size: 18px; color: var(--ink-soft); }
+  .avatar-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .avatar-pick { height: 66px; border-radius: 20px; border: 2px solid rgba(255,255,255,0.95); background: rgba(255,255,255,0.6); font-size: 34px; cursor: pointer; }
+  .avatar-pick.on { background: linear-gradient(180deg, #D9CCF6, #A98FEA); box-shadow: 0 0 0 3px var(--violet-deep); }
+  .go { height: 72px; font-size: 28px; }
+  .me { padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+  .me .nm { font-size: 20px; flex: 1; }
+  .score { padding: 6px 14px; border-radius: 999px; background: linear-gradient(180deg, #A98FEA, #7A5BD0); color: #fff; font-family: var(--font-en); font-weight: 700; font-size: 20px; box-shadow: inset 0 2px 0 rgba(255,255,255,0.45); }
+  .bar { height: 12px; border-radius: 999px; background: rgba(255,255,255,0.5); border: 1.5px solid rgba(255,255,255,0.85); overflow: hidden; }
+  .bar div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #C9B6EC, #8B6FD6); transition: width 0.25s linear; }
+  .qcard { padding: 18px 18px 22px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .polaroid { width: min(290px, 100%); padding: 12px 12px 14px; background: #fff; border-radius: 18px; box-shadow: 0 10px 26px rgba(46,37,80,0.18); transform: rotate(-2deg); }
+  .polaroid img { width: 100%; aspect-ratio: 3 / 2; object-fit: contain; display: block; border-radius: 10px; background: #F7F3FC; }
+  .qtext { font-family: var(--font-en); font-weight: 600; font-size: 28px; text-align: center; line-height: 1.25; }
+  .opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: auto; }
+  .opts .jelly { min-height: 76px; font-family: var(--font-en); font-weight: 600; font-size: 26px; border-radius: 24px; }
+  .opts .pic { padding: 8px; min-height: 0; }
+  .opts .pic img { width: 100%; aspect-ratio: 3 / 2; object-fit: contain; display: block; background: rgba(255,255,255,0.75); border-radius: 14px; }
+  .gain { position: fixed; left: 50%; top: 42%; transform: translateX(-50%); font-family: var(--font-en); font-weight: 700; font-size: 56px; color: var(--green); text-shadow: 0 4px 0 #fff; pointer-events: none; animation: floatUp 0.9s ease-out both; z-index: 30; }
+  .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; }
+  .dots span { display: inline-block; width: 12px; height: 12px; margin: 0 4px; border-radius: 50%; background: var(--violet); animation: pop 1.2s infinite alternate; }
+  .dots span:nth-child(2) { animation-delay: 0.3s; } .dots span:nth-child(3) { animation-delay: 0.6s; }
+  .link { background: none; border: 0; color: var(--ink-soft); font-family: var(--font-ko); font-size: 16px; text-decoration: underline; cursor: pointer; }
+  .rank-big { font-family: var(--font-en); font-weight: 700; font-size: 96px; line-height: 1; color: var(--violet-deep); }
+  .toplist { width: 100%; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .toplist .row { display: flex; align-items: center; gap: 10px; font-size: 19px; }
+  .golden-strip { text-align: center; padding: 10px; border-radius: 18px; background: linear-gradient(180deg, #FFE7A8, #F5B841); color: #4A3300; font-size: 20px; animation: glow 1.2s infinite; }
+  .bonus-layer { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+                 background: rgba(255, 243, 218, 0.82); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .rays { position: absolute; width: 300px; height: 300px; border-radius: 50%; background: repeating-conic-gradient(from 0deg, rgba(255,255,255,0.9) 0deg 12deg, rgba(255,255,255,0) 12deg 30deg); animation: spin 6s linear infinite; }
+  .box { position: relative; width: 170px; height: 170px; border-radius: 40px; display: flex; align-items: center; justify-content: center; }
+  .bonus-num { font-family: var(--font-en); font-weight: 700; font-size: 72px; line-height: 1; color: var(--coral); text-shadow: 0 4px 0 #fff, 0 10px 24px rgba(232,92,122,0.35); }
+</style>
+</head>
+<body>
+<main class="phone">
+
+  <!-- 1. 입장 -->
+  <section id="join" style="display:flex;flex-direction:column;gap:16px">
+    <div class="glass title">
+      <b>Who Is He?</b>
+      <span class="muted" style="font-size:18px">이름을 쓰고 동물 친구를 골라요</span>
+    </div>
+    <form class="glass form" id="joinForm">
+      <label for="code">방 번호</label>
+      <input class="field en" id="code" inputmode="numeric" maxlength="4" autocomplete="off" required>
+      <label for="name">내 이름 (별명도 좋아요)</label>
+      <input class="field" id="name" maxlength="10" autocomplete="off" required>
+      <span class="muted" style="font-size:18px">동물 친구</span>
+      <div class="avatar-grid" id="avatarGrid" role="radiogroup" aria-label="동물 친구 고르기"></div>
+      <button class="jelly btn-violet go" type="submit" id="joinBtn">들어가기</button>
+    </form>
+  </section>
+
+  <!-- 2. 기다리기 -->
+  <section id="waiting" class="center hidden">
+    <div id="waitAvatar"></div>
+    <b id="waitName" style="font-size:32px"></b>
+    <div class="glass" style="padding:18px 22px;font-size:22px">선생님이 시작하면<br>바로 문제가 나와요!</div>
+    <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
+    <button class="link" type="button" id="leaveBtn">다른 이름으로 다시 들어가기</button>
+  </section>
+
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+// =====================================================================
+// 학생 화면
+// =====================================================================
+const $ = (s) => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+const state = {
+  avatar: 'zebra',
+  me: null,          // { player_id, token, room_id, name, avatar, code }
+  room: null,        // rooms 테이블의 최신 행
+  watcher: null,
+};
+const SAVE_KEY = 'whoishe-player';
+
+function show(id) {
+  for (const s of ['join', 'waiting', 'play', 'ended']) {
+    const node = document.getElementById(s);
+    if (node) node.classList.toggle('hidden', s !== id);
+  }
+}
+
+// ---------------- 1. 입장 ----------------
+$('#code').value = params.get('code') || '';
+function renderAvatars() {
+  $('#avatarGrid').replaceChildren(...Object.entries(AVATARS).map(([key, emoji]) => el('button', {
+    type: 'button', class: 'avatar-pick' + (state.avatar === key ? ' on' : ''),
+    role: 'radio', 'aria-checked': state.avatar === key ? 'true' : 'false', 'aria-label': key,
+    onclick: () => { state.avatar = key; renderAvatars(); }
+  }, emoji)));
+}
+renderAvatars();
+
+$('#joinForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const code = $('#code').value.trim();
+  const name = $('#name').value.trim();
+  if (!/^\d{4}$/.test(code)) return toast('방 번호 4자리를 써 주세요.');
+  if (!name) return toast('이름을 써 주세요.');
+  $('#joinBtn').disabled = true;
+  try {
+    const r = await call('join_room', { p_code: code, p_name: name, p_avatar: state.avatar });
+    state.me = { player_id: r.player_id, token: r.token, room_id: r.room_id, name, avatar: state.avatar, code };
+    sessionStorage.setItem(SAVE_KEY, JSON.stringify(state.me));   // 탭마다 따로 저장 (새로고침해도 유지)
+    await enterRoom();
+  } catch (err) { toast(err.message); }
+  $('#joinBtn').disabled = false;
+});
+
+// ---------------- 2. 기다리기 + 방 상태 지켜보기 ----------------
+async function enterRoom() {
+  const fake = { id: state.me.player_id, avatar: state.me.avatar };
+  $('#waitAvatar').replaceChildren(avatarEl(fake, 120));
+  $('#waitName').textContent = state.me.name;
+  await refreshRoom();
+  if (!state.me) return;
+  if (state.watcher) state.watcher.stop();
+  state.watcher = watch({
+    name: 'student-' + state.me.player_id,
+    tables: [{ table: 'rooms', filter: 'id=eq.' + state.me.room_id }],
+    onChange: (p) => { if (p.new) applyRoom({ ...state.room, ...p.new }); },
+    refresh: refreshRoom,
+    pollMs: 2000
+  });
+}
+async function refreshRoom() {
+  if (!state.me) return;
+  const { data } = await db.from('rooms').select('*').eq('id', state.me.room_id).maybeSingle();
+  if (!data) { leave(); toast('방이 닫혔어요. 다시 들어와 주세요.'); return; }
+  applyRoom(data);
+}
+function applyRoom(row) {
+  const before = state.room && state.room.status;
+  state.room = row;
+  if (row.status === 'waiting') show('waiting');
+}
+function leave() {
+  if (state.watcher) state.watcher.stop();
+  state.watcher = null; state.me = null; state.room = null;
+  sessionStorage.removeItem(SAVE_KEY);
+  show('join');
+}
+$('#leaveBtn').addEventListener('click', leave);
+
+
+
+
+// ---------------- 시작: 새로고침해도 다시 들어오기 ----------------
+(async function init() {
+  const saved = JSON.parse(sessionStorage.getItem(SAVE_KEY) || 'null');
+  const code = params.get('code');
+  if (saved && (!code || code === saved.code)) {
+    state.me = saved;
+    state.avatar = saved.avatar;
+    await enterRoom();
+  } else {
+    show('join');
+  }
+})();
+</script>
+</body>
+</html>
