@@ -119,6 +119,7 @@
     <h2>3. 재미 장치</h2>
     <div class="row">
       <label class="switch"><input type="checkbox" id="optBonus" checked> 미스터리 상자</label>
+      <label class="switch"><input type="checkbox" id="optBlind" checked> 마지막 30초 블라인드</label>
     </div>
     <div class="row" style="justify-content:flex-end">
       <button id="createBtn" class="jelly btn-violet big" type="button">방 만들기</button>
@@ -163,11 +164,14 @@
       <div class="logo"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></div>
       <div><b>Who Is He?</b><small id="gameInfo"></small></div>
     </div>
+    <div class="golden-banner hidden" id="goldenBanner">골든 타임! 정답 2배</div>
     <div class="timer">
       <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="23" fill="none" stroke="rgba(91,63,176,0.15)" stroke-width="7"/><circle id="ring" cx="28" cy="28" r="23" fill="none" stroke="#8B6FD6" stroke-width="7" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="0" transform="rotate(-90 28 28)"/></svg>
       <div><span class="muted" style="font-size:14px">남은 시간</span><b id="timeText">--:--</b></div>
     </div>
     <div class="row">
+      <button class="jelly btn-amber ctrl" type="button" id="goldenBtn">⚡ 골든 타임</button>
+      <button class="jelly btn-white ctrl" type="button" id="blindBtn">블라인드</button>
       <button class="jelly btn-pink ctrl" type="button" id="endBtn">게임 종료</button>
     </div>
   </header>
@@ -179,7 +183,20 @@
       </div>
       <div class="race" id="race"></div>
       <div class="race-more" id="raceMore"></div>
+      <div class="blind-cover hidden" id="blindCover"><b>순위 비공개!</b><span class="muted" style="font-size:22px">누가 1등일까요? 끝까지 풀어 보세요</span></div>
     </section>
+    <aside class="side">
+      <div class="glass stats">
+        <div><span>전체 정답률</span><b id="stRate">-</b></div>
+        <div><span>열린 상자</span><b id="stBox">0개</b></div>
+        <div><span>푼 문제 합계</span><b id="stTotal">0</b></div>
+        <div><span>어려운 단어</span><b id="stHard" style="font-size:24px">-</b></div>
+      </div>
+      <div class="glass feed">
+        <h3 style="font-size:22px">방금 일어난 일</h3>
+        <div id="feed" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+    </aside>
   </div>
 </main>
 
@@ -200,6 +217,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.js"></script>
 <script src="config.js"></script>
 <script src="common.js"></script>
 <script>
@@ -218,6 +236,8 @@ const state = {
   watcher: null,
   renderTimer: null,
   ending: false,
+  prev: new Map(),     // 직전 화면의 점수·순위 (소식 만들기용)
+  blindSet: false,
 };
 
 function show(id) {
@@ -261,6 +281,7 @@ $('#createBtn').addEventListener('click', async () => {
       p_word_ids: [...state.selected], p_duration: state.duration, p_bonus: $('#optBonus').checked
     });
     state.room = { room_id: r.room_id, code: r.code, host_secret: r.host_secret };
+    state.room.auto_blind = $('#optBlind').checked;
     localStorage.setItem(SAVE_KEY, JSON.stringify(state.room));
     await openRoom();
   } catch (e) { toast(e.message); }
@@ -345,6 +366,7 @@ $('#cancelRoomBtn').addEventListener('click', async () => {
 function forgetRoom() {
   if (state.watcher) state.watcher.stop();
   state.watcher = null; state.room = null; state.roomRow = null; state.players = new Map(); state.ending = false;
+  state.prev = new Map(); state.blindSet = false; $('#feed').replaceChildren();
   localStorage.removeItem(SAVE_KEY);
   show('setup');
 }
@@ -371,6 +393,12 @@ function tick() {
   const left = secondsLeft(state.roomRow.ends_at);
   $('#timeText').textContent = mmss(left);
   $('#ring').setAttribute('stroke-dashoffset', String(144.5 * (1 - left / state.roomRow.duration_sec)));
+  const golden = state.roomRow.golden_until && new Date(state.roomRow.golden_until).getTime() > serverNow();
+  document.body.classList.toggle('golden', !!golden);
+  $('#goldenBanner').classList.toggle('hidden', !golden);
+  $('#goldenBtn').disabled = !!golden;
+  if (golden) $('#goldenBanner').textContent = `골든 타임! 정답 2배 · ${Math.ceil((new Date(state.roomRow.golden_until).getTime() - serverNow()) / 1000)}초`;
+  if (state.room.auto_blind && !state.blindSet && left <= 30 && left > 0) { state.blindSet = true; setBlind(true); }
   if (left <= 0) endGame();
 }
 async function endGame() {
@@ -388,6 +416,7 @@ function renderGame() {
   const list = sortPlayers(state.players.values());
   $('#gameInfo').textContent = `Lesson 10 · 방 번호 ${state.roomRow.code} · ${list.length}명 참여 중`;
   renderRace(list);
+  renderStatsAndFeed(list);
 }
 
 // ---------------- 4. 막대 레이스 ----------------
@@ -422,11 +451,72 @@ function renderRace(list) {
   $('#raceMore').textContent = list.length > SHOW ? `그 밖의 ${list.length - SHOW}명도 열심히 달리는 중` : '';
 }
 
+// ---------------- 5. 골든 타임 · 블라인드 · 소식 · 통계 ----------------
+$('#goldenBtn').addEventListener('click', async () => {
+  try {
+    const r = await call('set_golden', { p_room: state.room.room_id, p_secret: state.room.host_secret, p_seconds: 20 });
+    state.roomRow = { ...state.roomRow, golden_until: r.golden_until };
+    addFeed('골든 타임 시작! 20초 동안 정답 2배', true);
+  } catch (e) { toast(e.message); }
+});
+let blindOn = false;
+async function setBlind(on) {
+  blindOn = on;
+  $('#blindCover').classList.toggle('hidden', !on);
+  $('#race').style.filter = on ? 'blur(10px)' : '';
+  $('#blindBtn').textContent = on ? '블라인드 해제' : '블라인드';
+  try { await call('set_blind', { p_room: state.room.room_id, p_secret: state.room.host_secret, p_on: on }); } catch (e) { /* 화면 표시는 그대로 */ }
+}
+$('#blindBtn').addEventListener('click', () => { state.blindSet = true; setBlind(!blindOn); });
+
+function addFeed(text, gold = false) {
+  const box = $('#feed');
+  box.prepend(el('div', { class: 'feed-item' + (gold ? ' gold' : '') }, text));
+  while (box.children.length > 5) box.lastChild.remove();
+}
+function renderStatsAndFeed(list) {
+  const rankOf = new Map(list.map((p, i) => [p.id, i + 1]));
+  for (const p of list) {
+    const before = state.prev.get(p.id);
+    const row = rows.get(p.id);
+    if (before) {
+      const gotBonus = p.bonus - before.bonus;
+      if (gotBonus > 0) {
+        addFeed(`${p.name} 미스터리 상자 +${gotBonus}!`, true);
+        if (row) row.querySelector('.badges').replaceChildren(el('span', { class: 'gift' }, '🎁 +' + gotBonus));
+      }
+      const climb = before.rank - rankOf.get(p.id);
+      if (climb > 0 && rankOf.get(p.id) <= 3) addFeed(`${withJosa(p.name, '이', '가')} ${rankOf.get(p.id)}위로 올라섰어요`);
+      if (climb > 0 && row && gotBonus <= 0) row.querySelector('.badges').replaceChildren(el('span', { class: 'up' }, '▲' + climb));
+      if (before.correct === 0 && p.correct > 0) addFeed(`${p.name} 첫 정답!`);
+      if (row && (gotBonus > 0 || climb > 0)) setTimeout(() => row.querySelector('.badges').replaceChildren(), 3500);
+    }
+  }
+  state.prev = new Map(list.map((p) => [p.id, { bonus: p.bonus, correct: p.correct, rank: rankOf.get(p.id) }]));
+  const answered = list.reduce((s, p) => s + p.answered, 0);
+  const correct = list.reduce((s, p) => s + p.correct, 0);
+  $('#stRate').textContent = answered ? Math.round((correct / answered) * 100) + '%' : '-';
+  $('#stTotal').textContent = answered;
+}
+async function refreshAnswerStats() {   // 어려운 단어·열린 상자 수는 10초마다 한 번 계산
+  if (!state.roomRow || state.roomRow.status !== 'playing') return;
+  const { data } = await db.from('answers').select('word_id,is_correct,bonus').eq('room_id', state.room.room_id);
+  if (!data) return;
+  $('#stBox').textContent = data.filter((a) => a.bonus > 0).length + '개';
+  const by = new Map();
+  for (const a of data) { const s = by.get(a.word_id) || { n: 0, ok: 0 }; s.n++; s.ok += a.is_correct ? 1 : 0; by.set(a.word_id, s); }
+  let hard = null;
+  for (const [id, s] of by) if (s.n >= 3 && (!hard || s.ok / s.n < hard.rate)) hard = { id, rate: s.ok / s.n };
+  const w = hard && state.words.find((x) => x.id === hard.id);
+  $('#stHard').textContent = w ? w.word : '-';
+}
+setInterval(refreshAnswerStats, 10000);
 
 // ---------------- 6. 결과 ----------------
 function renderResult() {
   show('result');
   clearInterval(timerLoop);
+  document.body.classList.remove('golden');
   const list = sortPlayers(state.players.values());
   $('#resultInfo').textContent = `Lesson 10 · Who Is He? · ${list.length}명 참여`;
   const detail = (p) => `정답 ${p.correct} · 보너스 +${p.bonus}`;
@@ -456,6 +546,7 @@ function renderResult() {
   $('#rest').classList.toggle('hidden', rest.length === 0);
   $('#rest').replaceChildren(...rest.map((p, j) => el('div', { class: 'row', style: 'gap:8px' },
     el('span', { class: 'en muted', style: 'width:26px;text-align:right' }, j + 6), el('span', { style: 'flex:1' }, p.name), el('span', { class: 'en' }, p.score + '점'))));
+  if (window.confetti && list.length) setTimeout(() => confetti({ particleCount: 160, spread: 90, origin: { y: 0.35 }, colors: ['#8B6FD6', '#F08A9B', '#F5B841', '#5CC7A8', '#6FB6F0'] }), 900);
 }
 $('#newGameBtn').addEventListener('click', () => forgetRoom());
 $('#deleteBtn').addEventListener('click', async () => {
