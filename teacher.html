@@ -157,6 +157,43 @@
 </main>
 
 <!-- ===================== 3. 게임 중 ===================== -->
+<main id="game" class="wrap hidden">
+  <header class="glass topbar">
+    <div class="brand" style="flex:1">
+      <div class="logo"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></div>
+      <div><b>Who Is He?</b><small id="gameInfo"></small></div>
+    </div>
+    <div class="timer">
+      <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="23" fill="none" stroke="rgba(91,63,176,0.15)" stroke-width="7"/><circle id="ring" cx="28" cy="28" r="23" fill="none" stroke="#8B6FD6" stroke-width="7" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="0" transform="rotate(-90 28 28)"/></svg>
+      <div><span class="muted" style="font-size:14px">남은 시간</span><b id="timeText">--:--</b></div>
+    </div>
+    <div class="row">
+      <button class="jelly btn-pink ctrl" type="button" id="endBtn">게임 종료</button>
+    </div>
+  </header>
+  <div class="game-main">
+    <section class="glass panel">
+      <div class="row" style="justify-content:space-between">
+        <h2>실시간 레이스</h2>
+        <span class="muted" id="raceNote" style="font-size:16px"></span>
+      </div>
+      <div class="simple-list" id="simpleList"></div>
+    </section>
+  </div>
+</main>
+
+<!-- ===================== 4. 결과 ===================== -->
+<main id="result" class="wrap hidden">
+  <header style="text-align:center">
+    <div class="muted" style="font-size:20px" id="resultInfo"></div>
+    <h1 style="font-size:50px;letter-spacing:-1px">오늘의 패밀리 탐정왕</h1>
+  </header>
+  <section class="glass simple-list" id="resultList" style="width:min(1100px,100%);padding:20px"></section>
+  <div class="row" style="justify-content:center;margin-top:8px">
+    <button class="jelly btn-white ctrl" type="button" id="deleteBtn">학생 기록 지우기</button>
+    <button class="jelly btn-violet ctrl" type="button" id="newGameBtn">새 게임 만들기</button>
+  </div>
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
@@ -271,6 +308,8 @@ function scheduleRender() {          // 알림이 한꺼번에 와도 0.4초에 
 function route() {
   const st = state.roomRow && state.roomRow.status;
   if (st === 'waiting') { show('lobby'); renderLobby(); }
+  else if (st === 'playing') { if ($('#game').classList.contains('hidden')) enterGame(); renderGame(); }
+  else if (st === 'ended') { if (!state.ending && $('#result').classList.contains('hidden')) renderResult(); }
 }
 function renderLobby() {
   const code = state.roomRow.code;
@@ -307,9 +346,66 @@ function forgetRoom() {
   show('setup');
 }
 
+// ---------------- 3. 게임 시작 · 타이머 · 종료 ----------------
+$('#startBtn').addEventListener('click', async () => {
+  $('#startBtn').disabled = true;
+  try {
+    const r = await call('start_game', { p_room: state.room.room_id, p_secret: state.room.host_secret });
+    state.roomRow = { ...state.roomRow, status: 'playing', ends_at: r.ends_at };
+    route();
+  } catch (e) { toast(e.message); $('#startBtn').disabled = false; }
+});
+let timerLoop = null;
+function enterGame() {
+  show('game');
+  $('#gameInfo').textContent = `Lesson 10 · 방 번호 ${state.roomRow.code} · ${state.players.size}명 참여 중`;
+  clearInterval(timerLoop);
+  timerLoop = setInterval(tick, 250);
+  tick();
+}
+function tick() {
+  if (!state.roomRow || state.roomRow.status !== 'playing') { clearInterval(timerLoop); return; }
+  const left = secondsLeft(state.roomRow.ends_at);
+  $('#timeText').textContent = mmss(left);
+  $('#ring').setAttribute('stroke-dashoffset', String(144.5 * (1 - left / state.roomRow.duration_sec)));
+  if (left <= 0) endGame();
+}
+async function endGame() {
+  if (state.ending) return;
+  state.ending = true;
+  clearInterval(timerLoop);
+  try { await call('end_game', { p_room: state.room.room_id, p_secret: state.room.host_secret }); } catch (e) { toast(e.message); }
+  state.roomRow = { ...state.roomRow, status: 'ended' };
+  await refresh();
+  renderResult();
+}
+$('#endBtn').addEventListener('click', () => { if (confirm('지금 게임을 끝낼까요?')) endGame(); });
+
+function renderGame() {
+  const list = sortPlayers(state.players.values());
+  $('#gameInfo').textContent = `Lesson 10 · 방 번호 ${state.roomRow.code} · ${list.length}명 참여 중`;
+  $('#raceNote').textContent = '점수 = 맞힌 문제 + 보너스';
+  $('#simpleList').replaceChildren(...list.map((p, i) => el('div', { class: 'item' },
+    el('span', { class: 'en muted', style: 'width:28px' }, i + 1), avatarEl(p, 36), el('span', {}, p.name), el('b', {}, p.score + '점'))));
+}
 
 
 
+// ---------------- 6. 결과 ----------------
+function renderResult() {
+  show('result');
+  clearInterval(timerLoop);
+  const list = sortPlayers(state.players.values());
+  $('#resultInfo').textContent = `Lesson 10 · Who Is He? · ${list.length}명 참여`;
+  $('#resultList').replaceChildren(...list.map((p, i) => el('div', { class: 'item' },
+    el('span', { class: 'en muted', style: 'width:28px' }, i + 1), avatarEl(p, 36), el('span', {}, p.name), el('b', {}, p.score + '점'))));
+}
+$('#newGameBtn').addEventListener('click', () => forgetRoom());
+$('#deleteBtn').addEventListener('click', async () => {
+  if (!confirm('학생 이름과 점수 기록을 모두 지울까요?')) return;
+  try { await call('delete_room', { p_room: state.room.room_id, p_secret: state.room.host_secret }); toast('기록을 지웠어요.'); } catch (e) { toast(e.message); }
+  forgetRoom();
+});
 
 // ---------------- 시작: 새로고침해도 만들던 방으로 돌아오기 ----------------
 (async function init() {
