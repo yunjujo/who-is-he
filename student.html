@@ -100,7 +100,14 @@
   <!-- 4. 게임 끝 -->
   <section id="ended" class="center hidden">
     <b style="font-size:34px">게임 끝!</b>
-    <div class="glass" style="padding:20px 26px;font-size:26px">내 점수 <b class="en" id="endScore">0</b>점</div>
+    <div class="glass" style="padding:20px 26px;display:flex;flex-direction:column;align-items:center;gap:6px;width:100%">
+      <span id="endAvatar"></span>
+      <span class="muted" style="font-size:18px" id="endName"></span>
+      <div class="rank-big" id="endRank">-</div>
+      <span style="font-size:22px" id="endScore2"></span>
+      <span class="muted" style="font-size:16px" id="endDetail"></span>
+    </div>
+    <div class="glass toplist" id="endTop"></div>
     <p class="muted" style="font-size:18px">선생님 화면에서 시상식을 함께 봐요!</p>
   </section>
 </main>
@@ -276,7 +283,16 @@ async function showEnded() {
   const { data } = await db.from('players').select('*').eq('room_id', state.me.room_id);
   const list = sortPlayers(data || []);
   const meRow = list.find((p) => p.id === state.me.player_id);
-  $('#endScore').textContent = meRow ? meRow.score : 0;
+  $('#endAvatar').replaceChildren(avatarEl({ id: state.me.player_id, avatar: state.me.avatar }, 72));
+  $('#endName').textContent = state.me.name;
+  if (meRow) {
+    $('#endRank').textContent = (list.indexOf(meRow) + 1) + '등';
+    $('#endScore2').textContent = `${meRow.score}점 · ${list.length}명 중`;
+    $('#endDetail').textContent = `맞힌 문제 ${meRow.correct}개 · 보너스 +${meRow.bonus}`;
+  }
+  $('#endTop').replaceChildren(el('b', { style: 'font-size:20px' }, 'TOP 5'), ...list.slice(0, 5).map((p, i) =>
+    el('div', { class: 'row', style: p.id === state.me.player_id ? 'font-weight:700;color:var(--violet-deep)' : '' },
+      el('span', { class: 'en muted', style: 'width:24px' }, i + 1), avatarEl(p, 32), el('span', { style: 'flex:1' }, p.name), el('span', { class: 'en' }, p.score + '점'))));
 }
 
 // ---------------- 시작: 새로고침해도 다시 들어오기 ----------------

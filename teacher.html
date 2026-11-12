@@ -177,7 +177,8 @@
         <h2>실시간 레이스</h2>
         <span class="muted" id="raceNote" style="font-size:16px"></span>
       </div>
-      <div class="simple-list" id="simpleList"></div>
+      <div class="race" id="race"></div>
+      <div class="race-more" id="raceMore"></div>
     </section>
   </div>
 </main>
@@ -188,7 +189,9 @@
     <div class="muted" style="font-size:20px" id="resultInfo"></div>
     <h1 style="font-size:50px;letter-spacing:-1px">오늘의 패밀리 탐정왕</h1>
   </header>
-  <section class="glass simple-list" id="resultList" style="width:min(1100px,100%);padding:20px"></section>
+  <section class="podium" id="podium"></section>
+  <section class="top45" id="top45"></section>
+  <section class="glass rest hidden" id="rest"></section>
   <div class="row" style="justify-content:center;margin-top:8px">
     <button class="jelly btn-white ctrl" type="button" id="deleteBtn">학생 기록 지우기</button>
     <button class="jelly btn-violet ctrl" type="button" id="newGameBtn">새 게임 만들기</button>
@@ -384,11 +387,40 @@ $('#endBtn').addEventListener('click', () => { if (confirm('지금 게임을 끝
 function renderGame() {
   const list = sortPlayers(state.players.values());
   $('#gameInfo').textContent = `Lesson 10 · 방 번호 ${state.roomRow.code} · ${list.length}명 참여 중`;
-  $('#raceNote').textContent = '점수 = 맞힌 문제 + 보너스';
-  $('#simpleList').replaceChildren(...list.map((p, i) => el('div', { class: 'item' },
-    el('span', { class: 'en muted', style: 'width:28px' }, i + 1), avatarEl(p, 36), el('span', {}, p.name), el('b', {}, p.score + '점'))));
+  renderRace(list);
 }
 
+// ---------------- 4. 막대 레이스 ----------------
+const ROW = 54, SHOW = 12;
+const rows = new Map();   // player id → 화면의 막대 한 줄
+function renderRace(list) {
+  const race = $('#race');
+  const max = Math.max(10, ...list.map((p) => p.score));
+  $('#raceNote').textContent = `상위 ${Math.min(SHOW, list.length)}명 · 막대 = 정답 + 보너스 점수`;
+  list.forEach((p, i) => {
+    let row = rows.get(p.id);
+    if (!row) {
+      row = el('div', { class: 'race-row', style: `transform:translateY(${SHOW * ROW}px);opacity:0` },
+        el('span', { class: 'rank' }), avatarEl(p, 40), el('span', { class: 'name' }, p.name),
+        el('div', { class: 'tube' }, el('div', { class: 'fill', style: `width:0%;background:linear-gradient(90deg, ${colorFor(p.id)}B3, ${colorFor(p.id)})` }, el('span'))),
+        el('div', { class: 'badges' }));
+      race.append(row);
+      rows.set(p.id, row);
+    }
+    const visible = i < SHOW;
+    row.style.transform = `translateY(${(visible ? i : SHOW) * ROW}px)`;
+    row.style.opacity = visible ? '1' : '0';
+    const rank = row.querySelector('.rank');
+    const setRank = () => { rank.textContent = i + 1; rank.className = 'rank' + (i < 3 ? ' r' + (i + 1) : ''); };
+    clearTimeout(row.rankTimer);
+    if (!rank.textContent) setRank(); else row.rankTimer = setTimeout(setRank, 520);   // 막대가 다 움직인 뒤 순위 숫자 바꾸기
+    row.querySelector('.fill').style.width = Math.max(4, (p.score / max) * 100) + '%';
+    row.querySelector('.fill span').textContent = p.score;
+  });
+  for (const [id, row] of rows) if (!state.players.has(id)) { row.remove(); rows.delete(id); }
+  race.style.height = Math.min(SHOW, list.length) * ROW + 'px';
+  $('#raceMore').textContent = list.length > SHOW ? `그 밖의 ${list.length - SHOW}명도 열심히 달리는 중` : '';
+}
 
 
 // ---------------- 6. 결과 ----------------
@@ -397,8 +429,33 @@ function renderResult() {
   clearInterval(timerLoop);
   const list = sortPlayers(state.players.values());
   $('#resultInfo').textContent = `Lesson 10 · Who Is He? · ${list.length}명 참여`;
-  $('#resultList').replaceChildren(...list.map((p, i) => el('div', { class: 'item' },
-    el('span', { class: 'en muted', style: 'width:28px' }, i + 1), avatarEl(p, 36), el('span', {}, p.name), el('b', {}, p.score + '점'))));
+  const detail = (p) => `정답 ${p.correct} · 보너스 +${p.bonus}`;
+  const looks = [
+    { h: 210, avatar: 118, ring: '#F5B841', bg: 'linear-gradient(180deg, rgba(255,240,199,0.92), rgba(245,184,65,0.55))', num: '#8A5A00', size: 70 },
+    { h: 170, avatar: 96, ring: '#DDE2EA', bg: 'linear-gradient(180deg, rgba(235,239,245,0.85), rgba(190,198,212,0.55))', num: '#5C6577', size: 56 },
+    { h: 140, avatar: 96, ring: '#D9A27E', bg: 'linear-gradient(180deg, rgba(250,224,206,0.9), rgba(214,150,110,0.5))', num: '#8A4A22', size: 52 }
+  ];
+  const stand = (p, i) => {
+    if (!p) return el('div', { class: 'stand', style: 'width:260px' });
+    const k = looks[i];
+    return el('div', { class: 'stand pop', style: `width:${i === 0 ? 290 : 260}px;animation-delay:${(2 - i) * 0.35}s` },
+      i === 0 ? el('span', { style: 'font-size:46px', 'aria-hidden': 'true' }, '👑') : null,
+      el('span', { style: `border-radius:50%;box-shadow:0 0 0 6px ${k.ring}` }, avatarEl(p, k.avatar)),
+      el('span', { style: `font-size:${i === 0 ? 34 : 30}px` }, p.name),
+      el('div', { class: 'glass block', style: `width:100%;height:${k.h}px;background:${k.bg}` },
+        el('span', { class: 'num', style: `font-size:${k.size}px;color:${k.num}` }, i + 1),
+        el('span', { style: 'font-size:24px' }, p.score + '점'),
+        el('span', { class: 'muted', style: 'font-size:16px' }, detail(p))));
+  };
+  $('#podium').replaceChildren(stand(list[1], 1), stand(list[0], 0), stand(list[2], 2));
+  $('#top45').replaceChildren(...list.slice(3, 5).map((p, j) => el('div', { class: 'glass card45 pop' },
+    el('b', { class: 'en muted', style: 'font-size:34px;width:30px' }, j + 4), avatarEl(p, 58),
+    el('span', { style: 'font-size:28px;flex:1' }, p.name),
+    el('div', { style: 'text-align:right' }, el('div', { style: 'font-size:26px' }, p.score + '점'), el('div', { class: 'muted', style: 'font-size:15px' }, detail(p))))));
+  const rest = list.slice(5);
+  $('#rest').classList.toggle('hidden', rest.length === 0);
+  $('#rest').replaceChildren(...rest.map((p, j) => el('div', { class: 'row', style: 'gap:8px' },
+    el('span', { class: 'en muted', style: 'width:26px;text-align:right' }, j + 6), el('span', { style: 'flex:1' }, p.name), el('span', { class: 'en' }, p.score + '점'))));
 }
 $('#newGameBtn').addEventListener('click', () => forgetRoom());
 $('#deleteBtn').addEventListener('click', async () => {
