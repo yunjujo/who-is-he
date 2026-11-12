@@ -76,9 +76,25 @@
     <button class="link" type="button" id="leaveBtn">다른 이름으로 다시 들어가기</button>
   </section>
 
-  <section id="play" class="center hidden">
-    <b style="font-size:40px">게임 시작!</b>
-    <p class="muted" style="font-size:20px">(3단계에서 문제 화면을 만들어요)</p>
+  <!-- 3. 문제 풀기 -->
+  <section id="play" class="hidden" style="display:flex;flex-direction:column;gap:14px;flex:1">
+    <header class="glass me">
+      <span id="meAvatar"></span>
+      <span class="nm" id="meName"></span>
+      <span class="score" id="meScore">0점</span>
+    </header>
+    <div>
+      <div class="row muted" style="justify-content:space-between;font-size:16px;margin-bottom:6px">
+        <span id="qNo">문제 1</span><span class="en" id="qTime">--:--</span>
+      </div>
+      <div class="bar"><div id="qBar" style="width:100%"></div></div>
+    </div>
+    <div class="glass qcard" id="qCard">
+      <span class="pill" style="background:rgba(255,255,255,0.65);font-size:15px;color:var(--ink-soft)" id="qLabel"></span>
+      <div class="polaroid" id="qPic"><img id="qImg" alt=""></div>
+      <div class="qtext" id="qText"></div>
+    </div>
+    <div class="opts" id="opts"></div>
   </section>
 
   <!-- 4. 게임 끝 -->
@@ -103,6 +119,11 @@ const state = {
   me: null,          // { player_id, token, room_id, name, avatar, code }
   room: null,        // rooms 테이블의 최신 행
   watcher: null,
+  question: null,
+  score: 0,
+  answered: 0,
+  busy: false,
+  timer: null,
 };
 const SAVE_KEY = 'whoishe-player';
 
@@ -145,6 +166,8 @@ async function enterRoom() {
   const fake = { id: state.me.player_id, avatar: state.me.avatar };
   $('#waitAvatar').replaceChildren(avatarEl(fake, 120));
   $('#waitName').textContent = state.me.name;
+  $('#meAvatar').replaceChildren(avatarEl(fake, 40));
+  $('#meName').textContent = state.me.name;
   await refreshRoom();
   if (!state.me) return;
   if (state.watcher) state.watcher.stop();
@@ -177,12 +200,79 @@ function leave() {
 }
 $('#leaveBtn').addEventListener('click', leave);
 
-function startPlaying() { show('play'); }
+// ---------------- 3. 문제 풀기 ----------------
+async function startPlaying() {
+  show('play');
+  clearInterval(state.timer);
+  state.timer = setInterval(tickTime, 250);
+  tickTime();
+  try {
+    const r = await call('next_question', { p_player: state.me.player_id, p_token: state.me.token });
+    if (r.result === 'ok') renderQuestion(r.question);
+  } catch (e) { toast(e.message); }
+}
+function tickTime() {
+  if (!state.room || state.room.status !== 'playing') return;
+  const left = secondsLeft(state.room.ends_at);
+  $('#qTime').textContent = mmss(left);
+  $('#qBar').style.width = (left / state.room.duration_sec) * 100 + '%';
+  if (left <= 0) {
+    $('#qText').textContent = '시간 끝! 선생님 화면을 보세요';
+    document.querySelectorAll('#opts button').forEach((b) => (b.disabled = true));
+  }
+}
+function renderQuestion(q) {
+  state.question = q;
+  state.busy = false;
+  $('#qNo').textContent = '문제 ' + (state.answered + 1);
+  $('#qLabel').textContent = q.label;
+  $('#qPic').classList.toggle('hidden', !q.image);
+  if (q.image) $('#qImg').src = q.image;
+  $('#qText').textContent = q.text;
+  const opts = $('#opts');
+  opts.replaceChildren(...q.options.map((o, i) => {
+    const btn = el('button', { type: 'button', class: 'jelly opt-' + (i + 1) + (o.image ? ' pic' : ''), 'data-value': o.value,
+      'aria-label': o.image ? '그림 ' + (i + 1) : o.value, onclick: () => choose(o.value, btn) },
+      o.image ? el('img', { src: o.image, alt: '' }) : o.value);
+    return btn;
+  }));
+  $('#qCard').classList.remove('pop'); void $('#qCard').offsetWidth; $('#qCard').classList.add('pop');
+}
+async function choose(value, btn) {
+  if (state.busy) return;
+  state.busy = true;
+  document.querySelectorAll('#opts button').forEach((b) => (b.disabled = true));
+  let r;
+  try {
+    r = await call('submit_answer', { p_player: state.me.player_id, p_token: state.me.token, p_choice: value });
+  } catch (e) { toast(e.message); state.busy = false; document.querySelectorAll('#opts button').forEach((b) => (b.disabled = false)); return; }
+
+  if (r.result === 'closed') { await refreshRoom(); return; }
+  if (r.result === 'wait') { await wait(400); state.busy = false; document.querySelectorAll('#opts button').forEach((b) => (b.disabled = false)); return; }
+  if (r.result === 'no_question') { renderQuestion(r.next); return; }
+
+  state.answered += 1;
+  state.score = r.score;
+  $('#meScore').textContent = r.score + '점';
+  if (r.result === 'correct') {
+    btn.classList.add('is-correct');
+    const g = el('div', { class: 'gain' }, '+' + r.gain);
+    document.body.append(g); setTimeout(() => g.remove(), 900);
+    await wait(650);
+  } else {
+    btn.classList.add('is-wrong', 'shake');
+    const right = document.querySelector(`#opts button[data-value="${CSS.escape(r.answer)}"]`);
+    if (right) right.classList.add('is-correct');
+    await wait(1100);            // 오답 뒤 1초 쉬기 (DB 규칙과 같음)
+  }
+  if (state.room.status === 'playing' && secondsLeft(state.room.ends_at) > 0) renderQuestion(r.next);
+}
 
 
 // ---------------- 4. 게임 끝 ----------------
 async function showEnded() {
   show('ended');
+  clearInterval(state.timer);
   const { data } = await db.from('players').select('*').eq('room_id', state.me.room_id);
   const list = sortPlayers(data || []);
   const meRow = list.find((p) => p.id === state.me.player_id);
